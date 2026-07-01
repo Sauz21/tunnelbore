@@ -7,7 +7,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 
-import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.ShapeRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
@@ -51,7 +51,7 @@ public final class BoreHighlightRenderer {
 			for (BlockPos pos : marked) {
 				// Slight inflate so the outline doesn't z-fight with the block faces.
 				AABB box = new AABB(pos).inflate(0.002);
-				LevelRenderer.renderLineBox(poseStack, lines, box, R, G, B, A);
+				ShapeRenderer.renderLineBox(poseStack, lines, box, R, G, B, A);
 			}
 
 			poseStack.popPose();

@@ -1,6 +1,7 @@
 package com.auztechlabs.tunnelbore.client.mixin;
 
 import com.auztechlabs.tunnelbore.client.BoreClientState;
+import com.auztechlabs.tunnelbore.client.TunnelBoreClient;
 
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.core.BlockPos;
@@ -12,21 +13,28 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Stops "hold left-click to keep mining" from breaking blocks while Mark Mode is on.
+ * Two client-side hooks for Tunnel Bore:
+ * <ul>
+ *   <li>While Mark Mode is on, suppress hold-to-mine so marking never breaks a block.</li>
+ *   <li>While Mark Mode is off, when the player finishes mining a <em>marked</em> block, cancel
+ *       that single break and bore the whole layer instead — so a layer takes the normal mining
+ *       time of one block rather than breaking instantly on click.</li>
+ * </ul>
  *
- * <p>The initial left-click is already handled by {@code AttackBlockCallback} returning
- * SUCCESS, which cancels the break and does the marking. We deliberately do NOT touch
- * {@code startDestroyBlock} here: Fabric fires AttackBlockCallback from inside that method,
- * so cancelling it at HEAD would eat the mark event. We only guard the continued
- * hold-to-mine path, which doesn't fire that event.
- *
- * <p>{@code require = 0} keeps this non-fatal if the target ever moves on a future MC version.
+ * <p>{@code require = 0} keeps these non-fatal if a target ever moves on a future MC version.
  */
 @Mixin(MultiPlayerGameMode.class)
 public class MultiPlayerGameModeMixin {
 	@Inject(method = "continueDestroyBlock", at = @At("HEAD"), cancellable = true, require = 0)
 	private void tunnelbore$blockContinueDestroy(BlockPos pos, Direction face, CallbackInfoReturnable<Boolean> cir) {
 		if (BoreClientState.INSTANCE.isMarkMode()) {
+			cir.setReturnValue(false);
+		}
+	}
+
+	@Inject(method = "destroyBlock", at = @At("HEAD"), cancellable = true, require = 0)
+	private void tunnelbore$boreOnBreak(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
+		if (TunnelBoreClient.onClientBlockDestroyed(pos)) {
 			cir.setReturnValue(false);
 		}
 	}

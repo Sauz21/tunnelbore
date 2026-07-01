@@ -20,6 +20,10 @@ public final class BoreClientState {
 	private final Set<BlockPos> marked = new LinkedHashSet<>();
 	private boolean markMode = false;
 
+	// Debounce so a single completed break can't double-fire a bore for the same block.
+	private BlockPos lastBorePos = null;
+	private long lastBoreMs = 0L;
+
 	private BoreClientState() {
 	}
 
@@ -91,5 +95,20 @@ public final class BoreClientState {
 	/** Read-only view of the marked blocks, for rendering. */
 	public Set<BlockPos> marked() {
 		return Collections.unmodifiableSet(marked);
+	}
+
+	/**
+	 * Guards against one finished break firing a bore twice within a few ticks (the vanilla
+	 * mining state can briefly re-enter). Different positions always pass, so boring down layer
+	 * by layer is unaffected.
+	 */
+	public boolean canBoreAt(BlockPos pos) {
+		long now = System.currentTimeMillis();
+		if (pos.equals(lastBorePos) && now - lastBoreMs < 300L) {
+			return false;
+		}
+		lastBorePos = pos.immutable();
+		lastBoreMs = now;
+		return true;
 	}
 }

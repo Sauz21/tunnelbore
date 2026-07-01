@@ -21,6 +21,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.phys.BlockHitResult;
 
 import org.lwjgl.glfw.GLFW;
 
@@ -28,8 +29,9 @@ import org.lwjgl.glfw.GLFW;
  * Client entrypoint for Tunnel Bore.
  *
  * <p>Mark Mode ON: left-click marks a block (never breaks it), right-click unmarks it.
- * Mark Mode OFF: breaking a marked block sends a bore request to the server, which mines
- * the whole layer; the server's reply advances the selection into the broken face.
+ * Mark Mode OFF: mining a marked block proceeds at normal vanilla speed; the moment it
+ * finishes breaking (see {@code MultiPlayerGameModeMixin}), the whole layer bores and the
+ * selection advances into the broken face.
  */
 public class TunnelBoreClient implements ClientModInitializer {
 	private static KeyMapping toggleMarkKey;
@@ -51,7 +53,7 @@ public class TunnelBoreClient implements ClientModInitializer {
 		clearSelectionKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
 				"key.tunnelbore.clear",
 				InputConstants.Type.KEYSYM,
-				GLFW.GLFW_KEY_C,
+				GLFW.GLFW_KEY_DELETE,
 				"key.categories.tunnelbore"
 		));
 
@@ -60,7 +62,7 @@ public class TunnelBoreClient implements ClientModInitializer {
 				boolean on = BoreClientState.INSTANCE.toggleMarkMode();
 				sendActionBar(client, on
 						? Component.literal("Mark Mode: ON  (left-click = mark, right-click = unmark)")
-						: Component.literal("Mark Mode: OFF  (break a marked block to bore)"));
+						: Component.literal("Mark Mode: OFF  (mine a marked block to bore)"));
 			}
 
 			while (clearSelectionKey.consumeClick()) {
@@ -74,41 +76,28 @@ public class TunnelBoreClient implements ClientModInitializer {
 			}
 		});
 
-		// LEFT-CLICK: mark (Mark Mode on) or trigger a bore on a marked block (Mark Mode off).
+		// LEFT-CLICK while Mark Mode is on: mark the block (never breaks it). While Mark Mode is off
+		// we return PASS so vanilla mines at normal speed; a *completed* break of a marked block
+		// triggers the bore (see MultiPlayerGameModeMixin -> onClientBlockDestroyed).
 		AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
-			if (!world.isClientSide()) {
+			if (!world.isClientSide() || !BoreClientState.INSTANCE.isMarkMode()) {
 				return InteractionResult.PASS;
 			}
 			BoreClientState state = BoreClientState.INSTANCE;
-
-			if (state.isMarkMode()) {
-				if (!state.contains(pos)) {
-					if (state.isConnectedTo(pos)) {
-						state.add(pos);
-						sendActionBar(Minecraft.getInstance(),
-								Component.literal("Marked  •  " + state.size() + " blocks"));
-					} else {
-						sendActionBar(Minecraft.getInstance(),
-								Component.literal("Must touch your selection"));
-					}
+			if (!state.contains(pos)) {
+				if (state.isConnectedTo(pos)) {
+					state.add(pos);
+					sendActionBar(Minecraft.getInstance(),
+							Component.literal("Marked  •  " + state.size() + " blocks"));
+				} else {
+					sendActionBar(Minecraft.getInstance(),
+							Component.literal("Must touch your selection"));
 				}
-				return InteractionResult.SUCCESS;
 			}
-
-			// Mark Mode off: breaking a marked block bores the layer instead of breaking one block.
-			if (state.contains(pos)) {
-				Direction boreDir = direction.getOpposite();
-				ClientPlayNetworking.send(new BoreTriggerPayload(new ArrayList<>(state.marked()), boreDir));
-				// Advance the highlight to the next layer immediately so boring feels fluid; the
-				// server reply rolls this back only if the bore couldn't actually proceed.
-				state.advance(boreDir);
-				return InteractionResult.SUCCESS;
-			}
-
-			return InteractionResult.PASS;
+			return InteractionResult.SUCCESS;
 		});
 
-		// RIGHT-CLICK: unmark (Mark Mode on only).
+		// RIGHT-CLICK while Mark Mode is on: unmark the block.
 		UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
 			if (!world.isClientSide() || !BoreClientState.INSTANCE.isMarkMode()) {
 				return InteractionResult.PASS;
@@ -125,8 +114,8 @@ public class TunnelBoreClient implements ClientModInitializer {
 			return InteractionResult.SUCCESS;
 		});
 
-		// Bore result: we already advanced optimistically on the client, so only act when the bore
-		// did NOT proceed — roll the highlight back onto the un-bored layer.
+		// Bore result: we advance optimistically on the client, so only act if the bore did NOT
+		// proceed — roll the highlight back onto the un-bored layer.
 		ClientPlayNetworking.registerGlobalReceiver(BoreResultPayload.TYPE, (payload, context) -> {
 			context.client().execute(() -> {
 				if (!payload.advanced()) {
@@ -135,6 +124,27 @@ public class TunnelBoreClient implements ClientModInitializer {
 				sendActionBar(context.client(), Component.literal(payload.message()));
 			});
 		});
+	}
+
+	/**
+	 * Called from {@code MultiPlayerGameModeMixin} when the player finishes mining a block.
+	 * If it's a marked block (Mark Mode off), fire a bore of the whole layer and return true so
+	 * the caller cancels the single vanilla break (the bore routes all drops to the inventory).
+	 */
+	public static boolean onClientBlockDestroyed(BlockPos pos) {
+		BoreClientState state = BoreClientState.INSTANCE;
+		if (state.isMarkMode() || !state.contains(pos)) {
+			return false;
+		}
+		if (state.canBoreAt(pos)) {
+			Minecraft mc = Minecraft.getInstance();
+			Direction boreDir = mc.hitResult instanceof BlockHitResult hit
+					? hit.getDirection().getOpposite()
+					: Direction.DOWN;
+			ClientPlayNetworking.send(new BoreTriggerPayload(new ArrayList<>(state.marked()), boreDir));
+			state.advance(boreDir);
+		}
+		return true;
 	}
 
 	private static void sendActionBar(Minecraft client, Component text) {

@@ -1,0 +1,30 @@
+{
+	"schemaVersion": 1,
+	"id": "tunnelbore",
+	"version": "${version}",
+	"name": "Tunnel Bore",
+	"description": "Mark a flat area with your pickaxe, then bore through it layer by layer. A self-advancing tunneling and excavation tool.",
+	"authors": [
+		"Sauz21"
+	],
+	"contact": {
+		"homepage": "https://auztechlabs.com"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/tunnelbore/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.auztechlabs.tunnelbore.TunnelBore"
+		],
+		"client": [
+			"com.auztechlabs.tunnelbore.client.TunnelBoreClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.16.0",
+		"minecraft": "~1.21",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}

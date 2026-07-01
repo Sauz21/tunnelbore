@@ -33,6 +33,7 @@ import org.lwjgl.glfw.GLFW;
  */
 public class TunnelBoreClient implements ClientModInitializer {
 	private static KeyMapping toggleMarkKey;
+	private static KeyMapping clearSelectionKey;
 
 	@Override
 	public void onInitializeClient() {
@@ -47,12 +48,29 @@ public class TunnelBoreClient implements ClientModInitializer {
 				"key.categories.tunnelbore"
 		));
 
+		clearSelectionKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+				"key.tunnelbore.clear",
+				InputConstants.Type.KEYSYM,
+				GLFW.GLFW_KEY_C,
+				"key.categories.tunnelbore"
+		));
+
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			while (toggleMarkKey.consumeClick()) {
 				boolean on = BoreClientState.INSTANCE.toggleMarkMode();
 				sendActionBar(client, on
 						? Component.literal("Mark Mode: ON  (left-click = mark, right-click = unmark)")
 						: Component.literal("Mark Mode: OFF  (break a marked block to bore)"));
+			}
+
+			while (clearSelectionKey.consumeClick()) {
+				int cleared = BoreClientState.INSTANCE.size();
+				if (cleared > 0) {
+					BoreClientState.INSTANCE.clear();
+					sendActionBar(client, Component.literal("Selection cleared  •  " + cleared + " blocks"));
+				} else {
+					sendActionBar(client, Component.literal("Nothing to clear"));
+				}
 			}
 		});
 

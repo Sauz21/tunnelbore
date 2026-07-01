@@ -1,4 +1,5 @@
 {
 	"key.categories.tunnelbore": "Tunnel Bore",
-	"key.tunnelbore.toggle_mark": "Toggle Mark Mode"
+	"key.tunnelbore.toggle_mark": "Toggle Mark Mode",
+	"key.tunnelbore.clear": "Clear Selection"
 }

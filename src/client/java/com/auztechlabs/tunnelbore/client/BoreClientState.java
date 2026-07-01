@@ -1,17 +1,17 @@
 package com.auztechlabs.tunnelbore.client;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 
 /**
  * Client-side state for Tunnel Bore: whether Mark Mode is active and the set of
  * marked blocks (the cross-section to bore through).
- *
- * <p>Lives only on the client for now — it drives the red highlight rendering and,
- * later, gets sent to the server when the player triggers a bore.
  */
 public final class BoreClientState {
 	public static final BoreClientState INSTANCE = new BoreClientState();
@@ -40,7 +40,6 @@ public final class BoreClientState {
 	/**
 	 * Whether {@code pos} is allowed to join the selection: true if the selection is
 	 * empty, or if the block touches an already-marked block (faces, edges, or corners).
-	 * This keeps the selection contiguous — you can't mark blocks far from the group.
 	 */
 	public boolean isConnectedTo(BlockPos pos) {
 		if (marked.isEmpty()) {
@@ -69,6 +68,16 @@ public final class BoreClientState {
 	/** Removes a block. Returns true if it was present. */
 	public boolean remove(BlockPos pos) {
 		return marked.remove(pos);
+	}
+
+	/** Shifts the whole selection one block in {@code dir} (used after a successful bore). */
+	public void advance(Direction dir) {
+		List<BlockPos> shifted = new ArrayList<>(marked.size());
+		for (BlockPos pos : marked) {
+			shifted.add(pos.relative(dir));
+		}
+		marked.clear();
+		marked.addAll(shifted);
 	}
 
 	public void clear() {

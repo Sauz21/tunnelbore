@@ -40,6 +40,7 @@ public final class BoreEngine {
 		ItemStack tool = player.getMainHandItem();
 
 		int mined = 0;
+		int skipped = 0;
 		boolean stopped = false;
 		String reason = "";
 
@@ -58,6 +59,7 @@ public final class BoreEngine {
 
 			// Respect tool tier: skip blocks this tool can't harvest for drops.
 			if (state.requiresCorrectToolForDrops() && !tool.isCorrectToolForDrops(state)) {
+				skipped++;
 				continue;
 			}
 
@@ -90,8 +92,16 @@ public final class BoreEngine {
 			mined++;
 		}
 
-		boolean advanced = !stopped;
-		String message = stopped ? reason + " — bored " + mined : "Bored " + mined + " blocks";
+		// Advance unless we stopped, or we mined nothing because the tool couldn't harvest the layer.
+		boolean advanced = !stopped && (mined > 0 || skipped == 0);
+		String message;
+		if (stopped) {
+			message = reason + " — bored " + mined;
+		} else if (mined == 0 && skipped > 0) {
+			message = "Wrong tool for these blocks";
+		} else {
+			message = "Bored " + mined + " blocks";
+		}
 		send(player, advanced, boreDir, mined, message);
 	}
 

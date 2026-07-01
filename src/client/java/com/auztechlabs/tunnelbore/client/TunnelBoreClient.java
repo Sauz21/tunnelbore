@@ -99,6 +99,9 @@ public class TunnelBoreClient implements ClientModInitializer {
 			if (state.contains(pos)) {
 				Direction boreDir = direction.getOpposite();
 				ClientPlayNetworking.send(new BoreTriggerPayload(new ArrayList<>(state.marked()), boreDir));
+				// Advance the highlight to the next layer immediately so boring feels fluid; the
+				// server reply rolls this back only if the bore couldn't actually proceed.
+				state.advance(boreDir);
 				return InteractionResult.SUCCESS;
 			}
 
@@ -122,11 +125,12 @@ public class TunnelBoreClient implements ClientModInitializer {
 			return InteractionResult.SUCCESS;
 		});
 
-		// Server's bore result: advance the selection into the broken face and show status.
+		// Bore result: we already advanced optimistically on the client, so only act when the bore
+		// did NOT proceed — roll the highlight back onto the un-bored layer.
 		ClientPlayNetworking.registerGlobalReceiver(BoreResultPayload.TYPE, (payload, context) -> {
 			context.client().execute(() -> {
-				if (payload.advanced()) {
-					BoreClientState.INSTANCE.advance(payload.boreDir());
+				if (!payload.advanced()) {
+					BoreClientState.INSTANCE.advance(payload.boreDir().getOpposite());
 				}
 				sendActionBar(context.client(), Component.literal(payload.message()));
 			});

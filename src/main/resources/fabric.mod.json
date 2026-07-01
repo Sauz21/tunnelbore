@@ -21,6 +21,12 @@
 			"com.auztechlabs.tunnelbore.client.TunnelBoreClient"
 		]
 	},
+	"mixins": [
+		{
+			"config": "tunnelbore.client.mixins.json",
+			"environment": "client"
+		}
+	],
 	"depends": {
 		"fabricloader": ">=0.16.0",
 		"minecraft": "~1.21",

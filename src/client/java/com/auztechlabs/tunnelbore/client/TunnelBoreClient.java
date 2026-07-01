@@ -7,10 +7,13 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 
 import org.lwjgl.glfw.GLFW;
@@ -18,8 +21,10 @@ import org.lwjgl.glfw.GLFW;
 /**
  * Client entrypoint for Tunnel Bore.
  *
- * <p>Registers the Mark Mode keybind and the left-click marking handler. Rendering
- * of the red selection highlight and the bore networking are added in later steps.
+ * <p>Marking works WorldEdit-style: with Mark Mode on, left-click adds a block to the
+ * selection (never breaking it) and right-click removes it. New blocks must touch the
+ * existing selection. Block breaking is fully suppressed while Mark Mode is on (see
+ * {@code MultiPlayerGameModeMixin}).
  */
 public class TunnelBoreClient implements ClientModInitializer {
 	private static KeyMapping toggleMarkKey;
@@ -31,7 +36,7 @@ public class TunnelBoreClient implements ClientModInitializer {
 		// Draw the red highlight over marked blocks every frame.
 		BoreHighlightRenderer.register();
 
-		// A rebindable keybind (shows up under a "Tunnel Bore" category in Controls). Default: V.
+		// A rebindable keybind (Controls > "Tunnel Bore" category). Default: V.
 		toggleMarkKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
 				"key.tunnelbore.toggle_mark",
 				InputConstants.Type.KEYSYM,
@@ -39,29 +44,53 @@ public class TunnelBoreClient implements ClientModInitializer {
 				"key.categories.tunnelbore"
 		));
 
-		// Toggle Mark Mode when the keybind is pressed.
+		// Toggle Mark Mode on keypress.
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			while (toggleMarkKey.consumeClick()) {
 				boolean on = BoreClientState.INSTANCE.toggleMarkMode();
-				sendActionBar(client, Component.literal(
-						"Tunnel Bore — Mark Mode: " + (on ? "ON" : "OFF")
-								+ (on ? "  (left-click blocks to mark)" : "")));
+				sendActionBar(client, on
+						? Component.literal("Mark Mode: ON  (left-click = mark, right-click = unmark)")
+						: Component.literal("Mark Mode: OFF"));
 			}
 		});
 
-		// While Mark Mode is on, left-clicking a block marks/unmarks it instead of breaking it.
+		// LEFT-CLICK = mark (add). Never breaks the block; enforces the touching rule.
 		AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
-			// Only act on the client, and only while Mark Mode is active.
 			if (!world.isClientSide() || !BoreClientState.INSTANCE.isMarkMode()) {
 				return InteractionResult.PASS;
 			}
 
-			boolean nowMarked = BoreClientState.INSTANCE.toggleBlock(pos);
-			sendActionBar(Minecraft.getInstance(), Component.literal(
-					(nowMarked ? "Marked" : "Unmarked") + " block  •  "
-							+ BoreClientState.INSTANCE.size() + " selected"));
+			BoreClientState state = BoreClientState.INSTANCE;
+			if (!state.contains(pos)) {
+				if (state.isConnectedTo(pos)) {
+					state.add(pos);
+					sendActionBar(Minecraft.getInstance(),
+							Component.literal("Marked  •  " + state.size() + " blocks"));
+				} else {
+					sendActionBar(Minecraft.getInstance(),
+							Component.literal("Must touch your selection"));
+				}
+			}
 
-			// Returning anything other than PASS cancels the vanilla break, so the block stays put.
+			// Always cancel the break while marking (the mixin also blocks hold-to-mine).
+			return InteractionResult.SUCCESS;
+		});
+
+		// RIGHT-CLICK = unmark (remove). Also swallows the interaction so nothing gets placed/opened.
+		UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
+			if (!world.isClientSide() || !BoreClientState.INSTANCE.isMarkMode()) {
+				return InteractionResult.PASS;
+			}
+			if (hand != InteractionHand.MAIN_HAND) {
+				return InteractionResult.SUCCESS;
+			}
+
+			BlockPos pos = hitResult.getBlockPos();
+			BoreClientState state = BoreClientState.INSTANCE;
+			if (state.remove(pos)) {
+				sendActionBar(Minecraft.getInstance(),
+						Component.literal("Unmarked  •  " + state.size() + " blocks"));
+			}
 			return InteractionResult.SUCCESS;
 		});
 	}

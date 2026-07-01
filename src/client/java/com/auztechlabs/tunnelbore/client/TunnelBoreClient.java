@@ -22,16 +22,15 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 
 import org.lwjgl.glfw.GLFW;
 
 /**
  * Client entrypoint for Tunnel Bore.
  *
- * <p>Mark Mode ON: left-click marks a block (never breaks it), right-click unmarks it.
- * Mark Mode OFF: mining a marked block proceeds at normal vanilla speed; the moment it
- * finishes breaking (see {@code MultiPlayerGameModeMixin}), the whole layer bores and the
- * selection advances into the broken face.
+ * <p>Mark Mode ON: left-click (or hold and sweep) marks blocks; right-click unmarks. Mark Mode
+ * OFF: mining a marked block at normal speed bores the whole layer and advances the selection.
  */
 public class TunnelBoreClient implements ClientModInitializer {
 	private static KeyMapping toggleMarkKey;
@@ -61,7 +60,7 @@ public class TunnelBoreClient implements ClientModInitializer {
 			while (toggleMarkKey.consumeClick()) {
 				boolean on = BoreClientState.INSTANCE.toggleMarkMode();
 				sendActionBar(client, on
-						? Component.literal("Mark Mode: ON  (left-click = mark, right-click = unmark)")
+						? Component.literal("Mark Mode: ON  (hold left-click to paint, right-click to unmark)")
 						: Component.literal("Mark Mode: OFF  (mine a marked block to bore)"));
 			}
 
@@ -74,26 +73,25 @@ public class TunnelBoreClient implements ClientModInitializer {
 					sendActionBar(client, Component.literal("Nothing to clear"));
 				}
 			}
+
+			// Paint-to-mark: hold left-click in Mark Mode and the block under the crosshair gets
+			// marked each tick, so you can sweep or walk along to mark a big area at once.
+			if (BoreClientState.INSTANCE.isMarkMode()
+					&& client.screen == null
+					&& client.options.keyAttack.isDown()
+					&& client.hitResult instanceof BlockHitResult hit
+					&& hit.getType() == HitResult.Type.BLOCK) {
+				tryMarkBlock(hit.getBlockPos(), false);
+			}
 		});
 
-		// LEFT-CLICK while Mark Mode is on: mark the block (never breaks it). While Mark Mode is off
-		// we return PASS so vanilla mines at normal speed; a *completed* break of a marked block
-		// triggers the bore (see MultiPlayerGameModeMixin -> onClientBlockDestroyed).
+		// LEFT-CLICK while Mark Mode is on: mark the block (never breaks it). The initial click marks
+		// here; holding to paint is handled by the tick loop above.
 		AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
 			if (!world.isClientSide() || !BoreClientState.INSTANCE.isMarkMode()) {
 				return InteractionResult.PASS;
 			}
-			BoreClientState state = BoreClientState.INSTANCE;
-			if (!state.contains(pos)) {
-				if (state.isConnectedTo(pos)) {
-					state.add(pos);
-					sendActionBar(Minecraft.getInstance(),
-							Component.literal("Marked  •  " + state.size() + " blocks"));
-				} else {
-					sendActionBar(Minecraft.getInstance(),
-							Component.literal("Must touch your selection"));
-				}
-			}
+			tryMarkBlock(pos, true);
 			return InteractionResult.SUCCESS;
 		});
 
@@ -124,6 +122,26 @@ public class TunnelBoreClient implements ClientModInitializer {
 				sendActionBar(context.client(), Component.literal(payload.message()));
 			});
 		});
+	}
+
+	/**
+	 * Marks the block if it's new and touches the selection. Returns true if newly marked.
+	 * {@code showReject} shows the "must touch" hint — used for deliberate clicks, silent while painting.
+	 */
+	private static boolean tryMarkBlock(BlockPos pos, boolean showReject) {
+		BoreClientState state = BoreClientState.INSTANCE;
+		if (state.contains(pos)) {
+			return false;
+		}
+		if (!state.isConnectedTo(pos)) {
+			if (showReject) {
+				sendActionBar(Minecraft.getInstance(), Component.literal("Must touch your selection"));
+			}
+			return false;
+		}
+		state.add(pos);
+		sendActionBar(Minecraft.getInstance(), Component.literal("Marked  •  " + state.size() + " blocks"));
+		return true;
 	}
 
 	/**
